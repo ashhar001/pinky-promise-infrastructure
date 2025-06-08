@@ -51,7 +51,7 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(module.gke_cluster.cluster_ca_certificate)
 }
 
-# Local values
+# Local values......
 locals {
   common_labels = {
     project     = "pinky-promise"
