@@ -9,7 +9,7 @@ environment = "development"
 cluster_name = "pinky-promise-cluster"
 
 # Database Configuration (Minimal for dev)
-database_tier       = "db-f1-micro" # Minimal instance
+database_tier       = "db-custom-1-3840" # Small instance for testing v1
 database_name       = "pinky_promise"
 enable_read_replica = false # No replica for dev
 replica_tier        = "db-f1-micro"
