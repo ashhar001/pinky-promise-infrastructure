@@ -41,7 +41,7 @@ resource "google_monitoring_alert_policy" "high_cpu" {
     display_name = "GKE container CPU usage"
 
     condition_threshold {
-      filter          = "resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
+      filter          = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
       duration        = "300s"
       comparison      = "COMPARISON_GT"
       threshold_value = 0.8
@@ -73,7 +73,7 @@ resource "google_monitoring_alert_policy" "high_memory" {
     display_name = "GKE container Memory usage"
 
     condition_threshold {
-      filter          = "resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
+      filter          = "metric.type=\"kubernetes.io/container/memory/used_bytes\" resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
       duration        = "300s"
       comparison      = "COMPARISON_GT"
       threshold_value = 0.9
@@ -105,7 +105,7 @@ resource "google_monitoring_alert_policy" "pod_restarts" {
     display_name = "Pod restart rate"
 
     condition_threshold {
-      filter          = "resource.type=\"k8s_pod\" resource.labels.cluster_name=\"${var.cluster_name}\""
+      filter          = "metric.type=\"kubernetes.io/container/restart_count\" resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
       duration        = "300s"
       comparison      = "COMPARISON_GT"
       threshold_value = 3
@@ -137,7 +137,7 @@ resource "google_monitoring_alert_policy" "database_connections" {
     display_name = "Cloud SQL connection count"
 
     condition_threshold {
-      filter          = "resource.type=\"cloudsql_database\""
+      filter          = "metric.type=\"cloudsql.googleapis.com/database/network/connections\" resource.type=\"cloudsql_database\""
       duration        = "300s"
       comparison      = "COMPARISON_GT"
       threshold_value = 80
