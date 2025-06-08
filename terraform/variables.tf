@@ -23,12 +23,12 @@ variable "region" {
 }
 
 variable "environment" {
-  description = "Environment name (dev, staging, production)"
+  description = "Environment name (development, staging, production)"
   type        = string
   default     = "production"
   validation {
-    condition     = contains(["dev", "staging", "production"], var.environment)
-    error_message = "Environment must be one of: dev, staging, production."
+    condition     = contains(["development", "staging", "production"], var.environment)
+    error_message = "Environment must be one of: development, staging, production."
   }
 }
 
@@ -152,5 +152,36 @@ variable "alert_email" {
   description = "Email address for monitoring alerts"
   type        = string
   default     = "ashar.a.ansarii@gmail.com"
+}
+
+# Additional variables for production configuration
+variable "enable_deletion_protection" {
+  description = "Enable deletion protection for critical resources"
+  type        = bool
+  default     = false
+}
+
+variable "enable_high_availability" {
+  description = "Enable high availability configuration"
+  type        = bool
+  default     = false
+}
+
+variable "replica_tier" {
+  description = "Cloud SQL read replica instance tier"
+  type        = string
+  default     = "db-custom-1-3840"
+}
+
+variable "backup_location" {
+  description = "Location for database backups"
+  type        = string
+  default     = "us"
+}
+
+variable "common_labels" {
+  description = "Common labels to apply to all resources"
+  type        = map(string)
+  default     = {}
 }
 
