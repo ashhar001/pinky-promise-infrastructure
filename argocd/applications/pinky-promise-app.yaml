@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/YOUR_USERNAME/pinky-promise-app.git
+    repoURL: https://github.com/ashhar001/pinky-promise-app.git
     targetRevision: HEAD
     path: k8s/overlays/production
   destination:
