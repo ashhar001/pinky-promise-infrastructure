@@ -369,12 +369,27 @@ jobs:
         run: |
           cd terraform
           echo "🚀 Applying Terraform plan for ${{ matrix.environment }}..."
+          echo "Starting deployment at $(date)"
           
+          # Apply with detailed logging
           terraform apply \
             -auto-approve \
             tfplan-${{ matrix.environment }} 2>&1 | tee apply-output.txt
           
-          echo "✅ Infrastructure deployment completed for ${{ matrix.environment }}"
+          APPLY_EXIT_CODE=${PIPESTATUS[0]}
+          
+          if [[ $APPLY_EXIT_CODE -eq 0 ]]; then
+            echo "✅ Terraform apply completed successfully at $(date)"
+            echo "🚀 Waiting for resources to be fully provisioned..."
+            
+            # Wait a bit for resources to settle
+            sleep 15
+            
+            echo "✅ Infrastructure deployment completed for ${{ matrix.environment }}"
+          else
+            echo "❌ Terraform apply failed with exit code $APPLY_EXIT_CODE"
+            exit $APPLY_EXIT_CODE
+          fi
 
       - name: 📊 Capture Outputs
         id: outputs
@@ -382,22 +397,72 @@ jobs:
           cd terraform
           echo "📊 Capturing Terraform outputs..."
           
-          # Get key outputs
-          PROJECT_ID=$(terraform output -raw project_id 2>/dev/null || echo "")
-          CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
-          CLUSTER_LOCATION=$(terraform output -raw cluster_location 2>/dev/null || echo "")
+          # Verify terraform state is accessible
+          if ! terraform show -json > /dev/null 2>&1; then
+            echo "❌ Unable to access Terraform state"
+            exit 1
+          fi
           
+          # Display all outputs first
+          echo "🔍 All Terraform Outputs:"
+          terraform output
+          echo ""
+          
+          # Get key outputs with error handling
+          PROJECT_ID=$(terraform output -raw project_id 2>/dev/null || echo "NOT_SET")
+          CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "NOT_SET")
+          CLUSTER_LOCATION=$(terraform output -raw cluster_location 2>/dev/null || echo "NOT_SET")
+          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "NOT_SET")
+          DATABASE_INSTANCE=$(terraform output -raw database_instance_name 2>/dev/null || echo "NOT_SET")
+          
+          # Output key information
+          echo "🔑 Key Infrastructure Details:"
+          echo "Project ID: $PROJECT_ID"
+          echo "Cluster Name: $CLUSTER_NAME"
+          echo "Cluster Location: $CLUSTER_LOCATION"
+          echo "VPC Name: $VPC_NAME"
+          echo "Database Instance: $DATABASE_INSTANCE"
+          echo ""
+          
+          # Set outputs for use in subsequent steps
           echo "project-id=$PROJECT_ID" >> $GITHUB_OUTPUT
           echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
           echo "cluster-location=$CLUSTER_LOCATION" >> $GITHUB_OUTPUT
+          echo "vpc-name=$VPC_NAME" >> $GITHUB_OUTPUT
+          echo "database-instance=$DATABASE_INSTANCE" >> $GITHUB_OUTPUT
           
-          if [[ -n "$PROJECT_ID" && -n "$CLUSTER_NAME" && -n "$CLUSTER_LOCATION" ]]; then
+          # Generate cluster console URL
+          if [[ "$PROJECT_ID" != "NOT_SET" && "$CLUSTER_NAME" != "NOT_SET" && "$CLUSTER_LOCATION" != "NOT_SET" ]]; then
             CLUSTER_URL="https://console.cloud.google.com/kubernetes/clusters/details/$CLUSTER_LOCATION/$CLUSTER_NAME?project=$PROJECT_ID"
             echo "cluster-console-url=$CLUSTER_URL" >> $GITHUB_OUTPUT
+            echo "🌐 Cluster Console: $CLUSTER_URL"
           fi
           
           # Save all outputs to file
           terraform output -json > terraform-outputs.json
+          
+          # Verify critical resources exist
+          echo "🔍 Verifying infrastructure deployment..."
+          
+          if [[ "$CLUSTER_NAME" != "NOT_SET" ]]; then
+            echo "✅ GKE Cluster: $CLUSTER_NAME created successfully"
+          else
+            echo "❌ GKE Cluster output not found"
+          fi
+          
+          if [[ "$DATABASE_INSTANCE" != "NOT_SET" ]]; then
+            echo "✅ Database Instance: $DATABASE_INSTANCE created successfully"
+          else
+            echo "❌ Database Instance output not found"
+          fi
+          
+          if [[ "$VPC_NAME" != "NOT_SET" ]]; then
+            echo "✅ VPC Network: $VPC_NAME created successfully"
+          else
+            echo "❌ VPC Network output not found"
+          fi
+          
+          echo "📊 Infrastructure verification completed"
 
       - name: 💾 Upload Apply Artifacts
         uses: actions/upload-artifact@v4
@@ -409,15 +474,24 @@ jobs:
           retention-days: 90
 
       - name: 🔧 Configure kubectl
-        if: steps.outputs.outputs.cluster-name
+        if: steps.outputs.outputs.cluster-name != ''
         run: |
           echo "🔧 Configuring kubectl for ${{ matrix.environment }}..."
+          echo "Cluster: ${{ steps.outputs.outputs.cluster-name }}"
+          echo "Location: ${{ steps.outputs.outputs.cluster-location }}"
+          echo "Project: ${{ steps.outputs.outputs.project-id }}"
+          
+          # Wait a moment for cluster to be fully ready
+          sleep 30
+          
           gcloud container clusters get-credentials \
-            ${{ steps.outputs.outputs.cluster-name }} \
-            --region ${{ steps.outputs.outputs.cluster-location }} \
-            --project ${{ steps.outputs.outputs.project-id }}
+            "${{ steps.outputs.outputs.cluster-name }}" \
+            --region "${{ steps.outputs.outputs.cluster-location }}" \
+            --project "${{ steps.outputs.outputs.project-id }}"
           
           echo "✅ kubectl configured successfully"
+          kubectl cluster-info
+          kubectl get nodes
 
   # ===============================================
   # 🧹 TERRAFORM DESTROY (Manual Only)
