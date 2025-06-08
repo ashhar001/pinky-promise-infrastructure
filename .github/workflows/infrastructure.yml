@@ -276,7 +276,7 @@ jobs:
             });
 
       - name: 💾 Upload Plan Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ matrix.environment }}
           path: |
@@ -352,7 +352,7 @@ jobs:
           echo "TF_VAR_alert_email=${{ secrets.ALERT_EMAIL }}" >> $GITHUB_ENV
 
       - name: 📥 Download Plan Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: terraform-plan-${{ matrix.environment }}
           path: terraform/
@@ -400,7 +400,7 @@ jobs:
           terraform output -json > terraform-outputs.json
 
       - name: 💾 Upload Apply Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-apply-${{ matrix.environment }}
           path: |
