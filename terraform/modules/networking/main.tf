@@ -9,10 +9,10 @@ resource "google_compute_network" "vpc" {
   project = var.project_id
 
   description = "VPC network for Pinky Promise application"
-  
+
   # Prevent deletion of this resource
   lifecycle {
-    prevent_destroy = false  # Set to true in production
+    prevent_destroy = false # Set to true in production
   }
 }
 
