@@ -1,0 +1,538 @@
+name: 🏗️ Infrastructure CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+env:
+  TF_VERSION: '1.6.6'
+  TF_IN_AUTOMATION: true
+  TF_CLI_ARGS: '-no-color'
+  
+jobs:
+  # ===============================================
+  # 🔍 VALIDATION & SECURITY SCANNING
+  # ===============================================
+  validate:
+    name: 🔍 Validate & Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    outputs:
+      changed-environments: ${{ steps.detect-changes.outputs.environments }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: 🔍 Terraform Format Check
+        run: |
+          echo "🎨 Checking Terraform formatting..."
+          if ! terraform fmt -check -recursive terraform/; then
+            echo "❌ Terraform files are not properly formatted!"
+            echo "💡 Run 'terraform fmt -recursive terraform/' to fix"
+            exit 1
+          fi
+          echo "✅ All Terraform files are properly formatted"
+
+      - name: 🔍 Terraform Validate
+        run: |
+          echo "🔍 Validating Terraform configuration..."
+          cd terraform
+          terraform init -backend=false
+          terraform validate
+          echo "✅ Terraform configuration is valid"
+
+      - name: 🛡️ Security Scan with TFSec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+          soft_fail: true
+
+      - name: 🛡️ Security Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '0'
+
+      - name: 📊 Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 🔍 Detect Changed Environments
+        id: detect-changes
+        run: |
+          # Determine which environments might be affected
+          echo "Detecting environment changes..."
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environments=[\"${{ github.event.inputs.environment }}\"]" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environments=[\"production\"]" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "environments=[\"staging\"]" >> $GITHUB_OUTPUT
+          else
+            echo "environments=[\"development\"]" >> $GITHUB_OUTPUT
+          fi
+
+  # ===============================================
+  # 📋 TERRAFORM PLAN
+  # ===============================================
+  plan:
+    name: 📋 Plan Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.validate.outputs.changed-environments || '["development"]') }}
+    environment:
+      name: ${{ matrix.environment }}
+    outputs:
+      plan-status: ${{ steps.plan.outcome }}
+      cost-estimate: ${{ steps.cost.outputs.estimate }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: ⚙️ Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 🔧 Configure Environment Variables
+        run: |
+          echo "🔧 Setting up environment variables for ${{ matrix.environment }}..."
+          
+          # Set environment-specific variables
+          case "${{ matrix.environment }}" in
+            "production")
+              echo "TF_VAR_environment=production" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.PROD_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.PROD_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/production" >> $GITHUB_ENV
+              ;;
+            "staging")
+              echo "TF_VAR_environment=staging" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.STAGING_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.STAGING_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/staging" >> $GITHUB_ENV
+              ;;
+            "development")
+              echo "TF_VAR_environment=development" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.DEV_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.DEV_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/development" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          # Common variables
+          echo "TF_VAR_alert_email=${{ secrets.ALERT_EMAIL }}" >> $GITHUB_ENV
+
+      - name: 🏗️ Terraform Init
+        run: |
+          cd terraform
+          echo "🏗️ Initializing Terraform for ${{ matrix.environment }}..."
+          terraform init \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ env.TF_STATE_PREFIX }}"
+
+      - name: 📋 Terraform Plan
+        id: plan
+        run: |
+          cd terraform
+          echo "📋 Creating Terraform plan for ${{ matrix.environment }}..."
+          
+          terraform plan \
+            -detailed-exitcode \
+            -out=tfplan-${{ matrix.environment }} \
+            -var-file="environments/${{ matrix.environment }}.tfvars" 2>&1 | tee plan-output.txt
+          
+          # Capture exit code
+          PLAN_EXIT_CODE=${PIPESTATUS[0]}
+          echo "plan-exit-code=$PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          # Process plan output
+          if [[ $PLAN_EXIT_CODE -eq 0 ]]; then
+            echo "✅ No changes detected"
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          elif [[ $PLAN_EXIT_CODE -eq 2 ]]; then
+            echo "📝 Changes detected"
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Plan failed"
+            exit $PLAN_EXIT_CODE
+          fi
+
+      - name: 💰 Cost Estimation
+        id: cost
+        if: steps.plan.outputs.has-changes == 'true'
+        run: |
+          echo "💰 Estimating infrastructure costs..."
+          
+          # Install Infracost
+          curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+          
+          # Generate cost estimate
+          cd terraform
+          ~/bin/infracost breakdown \
+            --path=tfplan-${{ matrix.environment }} \
+            --format=json \
+            --out-file=cost-estimate.json
+          
+          # Extract cost summary
+          MONTHLY_COST=$(~/bin/infracost output --path=cost-estimate.json --format=json | jq -r '.totalMonthlyCost')
+          echo "estimate=$MONTHLY_COST" >> $GITHUB_OUTPUT
+          
+          # Generate human-readable output
+          ~/bin/infracost output --path=cost-estimate.json --format=table > cost-summary.txt
+          echo "📊 Monthly cost estimate: $MONTHLY_COST USD"
+
+      - name: 💬 Comment on PR
+        if: github.event_name == 'pull_request' && steps.plan.outputs.has-changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('terraform/plan-output.txt', 'utf8');
+            const costSummary = fs.existsSync('terraform/cost-summary.txt') ? 
+              fs.readFileSync('terraform/cost-summary.txt', 'utf8') : 'Cost estimation not available';
+            
+            const comment = `## 🏗️ Terraform Plan - ${{ matrix.environment }}
+            
+            ### 📋 Plan Summary
+            \`\`\`
+            ${planOutput.slice(-2000)} // Last 2000 chars to avoid GitHub limits
+            \`\`\`
+            
+            ### 💰 Cost Estimate
+            \`\`\`
+            ${costSummary}
+            \`\`\`
+            
+            **Monthly Cost**: ${{ steps.cost.outputs.estimate || 'Not calculated' }} USD
+            
+            ---
+            *Environment*: \`${{ matrix.environment }}\`
+            *Commit*: \`${{ github.sha }}\`
+            *Workflow*: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: 💾 Upload Plan Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-plan-${{ matrix.environment }}
+          path: |
+            terraform/tfplan-${{ matrix.environment }}
+            terraform/plan-output.txt
+            terraform/cost-estimate.json
+            terraform/cost-summary.txt
+          retention-days: 30
+
+  # ===============================================
+  # 🚀 TERRAFORM APPLY
+  # ===============================================
+  apply:
+    name: 🚀 Apply Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate, plan]
+    if: |
+      always() && 
+      needs.plan.result == 'success' && 
+      (
+        (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+      )
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.validate.outputs.changed-environments || '["development"]') }}
+    environment:
+      name: ${{ matrix.environment }}
+      url: ${{ steps.outputs.outputs.cluster-console-url }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: ⚙️ Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 🔧 Configure Environment Variables
+        run: |
+          echo "🔧 Setting up environment variables for ${{ matrix.environment }}..."
+          
+          case "${{ matrix.environment }}" in
+            "production")
+              echo "TF_VAR_environment=production" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.PROD_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.PROD_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/production" >> $GITHUB_ENV
+              ;;
+            "staging")
+              echo "TF_VAR_environment=staging" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.STAGING_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.STAGING_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/staging" >> $GITHUB_ENV
+              ;;
+            "development")
+              echo "TF_VAR_environment=development" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.DEV_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.DEV_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/development" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          echo "TF_VAR_alert_email=${{ secrets.ALERT_EMAIL }}" >> $GITHUB_ENV
+
+      - name: 📥 Download Plan Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: terraform-plan-${{ matrix.environment }}
+          path: terraform/
+
+      - name: 🏗️ Terraform Init
+        run: |
+          cd terraform
+          terraform init \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ env.TF_STATE_PREFIX }}"
+
+      - name: 🚀 Terraform Apply
+        id: apply
+        run: |
+          cd terraform
+          echo "🚀 Applying Terraform plan for ${{ matrix.environment }}..."
+          
+          terraform apply \
+            -auto-approve \
+            tfplan-${{ matrix.environment }} 2>&1 | tee apply-output.txt
+          
+          echo "✅ Infrastructure deployment completed for ${{ matrix.environment }}"
+
+      - name: 📊 Capture Outputs
+        id: outputs
+        run: |
+          cd terraform
+          echo "📊 Capturing Terraform outputs..."
+          
+          # Get key outputs
+          PROJECT_ID=$(terraform output -raw project_id 2>/dev/null || echo "")
+          CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          CLUSTER_LOCATION=$(terraform output -raw cluster_location 2>/dev/null || echo "")
+          
+          echo "project-id=$PROJECT_ID" >> $GITHUB_OUTPUT
+          echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "cluster-location=$CLUSTER_LOCATION" >> $GITHUB_OUTPUT
+          
+          if [[ -n "$PROJECT_ID" && -n "$CLUSTER_NAME" && -n "$CLUSTER_LOCATION" ]]; then
+            CLUSTER_URL="https://console.cloud.google.com/kubernetes/clusters/details/$CLUSTER_LOCATION/$CLUSTER_NAME?project=$PROJECT_ID"
+            echo "cluster-console-url=$CLUSTER_URL" >> $GITHUB_OUTPUT
+          fi
+          
+          # Save all outputs to file
+          terraform output -json > terraform-outputs.json
+
+      - name: 💾 Upload Apply Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-apply-${{ matrix.environment }}
+          path: |
+            terraform/apply-output.txt
+            terraform/terraform-outputs.json
+          retention-days: 90
+
+      - name: 🔧 Configure kubectl
+        if: steps.outputs.outputs.cluster-name
+        run: |
+          echo "🔧 Configuring kubectl for ${{ matrix.environment }}..."
+          gcloud container clusters get-credentials \
+            ${{ steps.outputs.outputs.cluster-name }} \
+            --region ${{ steps.outputs.outputs.cluster-location }} \
+            --project ${{ steps.outputs.outputs.project-id }}
+          
+          echo "✅ kubectl configured successfully"
+
+  # ===============================================
+  # 🧹 TERRAFORM DESTROY (Manual Only)
+  # ===============================================
+  destroy:
+    name: 🧹 Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    environment:
+      name: ${{ github.event.inputs.environment }}-destroy
+    steps:
+      - name: ⚠️ Confirm Destruction
+        run: |
+          echo "⚠️ WARNING: This will DESTROY all infrastructure in ${{ github.event.inputs.environment }}!"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Triggered by: ${{ github.actor }}"
+          
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: 🔧 Configure Environment Variables
+        run: |
+          case "${{ github.event.inputs.environment }}" in
+            "production")
+              echo "TF_VAR_environment=production" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.PROD_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.PROD_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/production" >> $GITHUB_ENV
+              ;;
+            "staging")
+              echo "TF_VAR_environment=staging" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.STAGING_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.STAGING_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/staging" >> $GITHUB_ENV
+              ;;
+            "development")
+              echo "TF_VAR_environment=development" >> $GITHUB_ENV
+              echo "TF_VAR_project_id=${{ secrets.DEV_PROJECT_ID }}" >> $GITHUB_ENV
+              echo "TF_STATE_BUCKET=${{ secrets.DEV_TF_STATE_BUCKET }}" >> $GITHUB_ENV
+              echo "TF_STATE_PREFIX=terraform/development" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: 🏗️ Terraform Init
+        run: |
+          cd terraform
+          terraform init \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ env.TF_STATE_PREFIX }}"
+
+      - name: 🧹 Terraform Destroy
+        run: |
+          cd terraform
+          echo "🧹 Destroying infrastructure for ${{ github.event.inputs.environment }}..."
+          
+          terraform destroy \
+            -auto-approve \
+            -var-file="environments/${{ github.event.inputs.environment }}.tfvars"
+          
+          echo "✅ Infrastructure destroyed for ${{ github.event.inputs.environment }}"
+
+  # ===============================================
+  # 📢 NOTIFICATIONS
+  # ===============================================
+  notify:
+    name: 📢 Send Notifications
+    runs-on: ubuntu-latest
+    needs: [validate, plan, apply]
+    if: always()
+    steps:
+      - name: 📧 Send Email Notification
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "🏗️ Infrastructure Pipeline: ${{ job.status }} - ${{ github.repository }}"
+          body: |
+            Infrastructure Pipeline Status: ${{ job.status }}
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Actor: ${{ github.actor }}
+            
+            Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            Results:
+            - Validation: ${{ needs.validate.result }}
+            - Planning: ${{ needs.plan.result }}
+            - Apply: ${{ needs.apply.result }}
+          to: ${{ secrets.ALERT_EMAIL }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+
+      - name: 💬 Slack Notification
+        if: always() && secrets.SLACK_WEBHOOK != 'disabled'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          channel: '#infrastructure'
+          username: 'Infrastructure Bot'
+          icon_emoji: ':construction:'
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
