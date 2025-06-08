@@ -498,6 +498,13 @@ jobs:
             terraform/terraform-outputs.json
           retention-days: 90
 
+      - name: 🔧 Install GKE Auth Plugin
+        if: steps.outputs.outputs.cluster-name != ''
+        run: |
+          echo "🔌 Installing gke-gcloud-auth-plugin..."
+          gcloud components install gke-gcloud-auth-plugin --quiet
+          echo "✅ GKE auth plugin installed successfully"
+
       - name: 🔧 Configure kubectl
         if: steps.outputs.outputs.cluster-name != ''
         run: |
@@ -508,6 +515,9 @@ jobs:
           
           # Wait a moment for cluster to be fully ready
           sleep 30
+          
+          # Use the GKE auth plugin
+          export USE_GKE_GCLOUD_AUTH_PLUGIN=True
           
           gcloud container clusters get-credentials \
             "${{ steps.outputs.outputs.cluster-name }}" \
