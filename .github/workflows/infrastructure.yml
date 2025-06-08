@@ -498,7 +498,7 @@ jobs:
     if: always()
     steps:
       - name: 📧 Send Email Notification
-        if: always()
+        if: always() && secrets.EMAIL_USERNAME != '' && secrets.EMAIL_PASSWORD != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
