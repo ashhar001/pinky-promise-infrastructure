@@ -169,7 +169,7 @@ resource "google_monitoring_dashboard" "main" {
             dataSets = [{
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
+                  filter = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
                   aggregation = {
                     alignmentPeriod    = "60s"
                     perSeriesAligner   = "ALIGN_RATE"
@@ -188,7 +188,7 @@ resource "google_monitoring_dashboard" "main" {
             dataSets = [{
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
+                  filter = "metric.type=\"kubernetes.io/container/memory/used_bytes\" resource.type=\"k8s_container\" resource.labels.cluster_name=\"${var.cluster_name}\""
                   aggregation = {
                     alignmentPeriod    = "60s"
                     perSeriesAligner   = "ALIGN_MEAN"
@@ -207,7 +207,7 @@ resource "google_monitoring_dashboard" "main" {
             dataSets = [{
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"cloudsql_database\""
+                  filter = "metric.type=\"cloudsql.googleapis.com/database/network/connections\" resource.type=\"cloudsql_database\""
                   aggregation = {
                     alignmentPeriod  = "60s"
                     perSeriesAligner = "ALIGN_MEAN"
