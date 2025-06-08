@@ -497,7 +497,10 @@ jobs:
     needs: [validate, plan, apply]
     if: always()
     steps:
-      # Email notifications temporarily disabled - missing EMAIL_USERNAME and EMAIL_PASSWORD secrets
-
-      # Notifications section - add other notification methods here if needed
+      - name: 📋 Workflow Complete
+        run: |
+          echo "🎉 Infrastructure pipeline completed!"
+          echo "✅ Validation: ${{ needs.validate.result }}"
+          echo "📋 Planning: ${{ needs.plan.result }}"
+          echo "🚀 Apply: ${{ needs.apply.result }}"
 
