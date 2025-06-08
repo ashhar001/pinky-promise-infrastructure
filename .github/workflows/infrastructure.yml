@@ -48,7 +48,7 @@ jobs:
   validate:
     name: 🔍 Validate & Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     outputs:
       changed-environments: ${{ steps.detect-changes.outputs.environments }}
     steps:
