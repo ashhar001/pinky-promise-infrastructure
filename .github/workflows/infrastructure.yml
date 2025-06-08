@@ -500,7 +500,7 @@ jobs:
       # Email notifications temporarily disabled - missing EMAIL_USERNAME and EMAIL_PASSWORD secrets
 
       - name: 💬 Slack Notification
-        if: always() && secrets.SLACK_WEBHOOK != 'disabled'
+        if: always()
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
