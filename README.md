@@ -1,6 +1,6 @@
 # Pinky Promise Infrastructure
 
-This repository contains the infrastructure as code (IaC) for the Pinky Promise application using Terraform and ArgoCD configurations.
+This repository contains the infrastructure as code (IaC) for the Pinky Promise application using Terraform and ArgoCD configurations.....
 
 ## Repository Structure
 
