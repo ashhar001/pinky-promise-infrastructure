@@ -364,6 +364,31 @@ jobs:
             -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
             -backend-config="prefix=${{ env.TF_STATE_PREFIX }}"
 
+      - name: 🔍 Check for Resource Conflicts
+        id: conflict-check
+        run: |
+          echo "🔍 Checking for existing resources that might conflict..."
+          
+          # Check for existing VPC
+          VPC_NAME="${{ matrix.environment }}-pinky-promise-vpc"
+          
+          if gcloud compute networks describe "$VPC_NAME" --project="${{ env.TF_VAR_project_id }}" --format="value(name)" 2>/dev/null; then
+            echo "⚠️ VPC $VPC_NAME already exists!"
+            echo "This may cause terraform apply to fail with 'alreadyExists' error."
+            echo "Consider running the destroy workflow first or importing existing resources."
+            echo "conflict-detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No VPC conflicts detected"
+            echo "conflict-detected=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for GKE cluster
+          CLUSTER_NAME="${{ matrix.environment }}-pinky-promise-cluster"
+          if gcloud container clusters describe "$CLUSTER_NAME" --region="us-central1" --project="${{ env.TF_VAR_project_id }}" --format="value(name)" 2>/dev/null; then
+            echo "⚠️ GKE cluster $CLUSTER_NAME already exists!"
+            echo "conflict-detected=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: 🚀 Terraform Apply
         id: apply
         run: |

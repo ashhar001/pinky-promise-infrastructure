@@ -46,6 +46,41 @@ This repository contains the infrastructure as code (IaC) for the Pinky Promise 
 └── README.md                 # This file
 ```
 
+## 🔧 Resource Management Scripts
+
+This repository includes helper scripts to manage resources and handle conflicts:
+
+### Check for Existing Resources
+```bash
+# Check for existing resources in your GCP project
+./scripts/check-existing-resources.sh <environment> <project_id>
+```
+
+### Import Existing Resources
+```bash
+# Import existing resources into Terraform state
+./scripts/import-existing-resources.sh <environment> <project_id> [resource_type]
+# Resource types: vpc, subnets, cluster, database, all
+```
+
+### Clean Up Resources
+```bash
+# Safely remove all resources (useful for fresh deployments)
+./scripts/cleanup-resources.sh <environment> <project_id> [force]
+```
+
+### Example Usage
+```bash
+# Check for conflicts before deployment
+./scripts/check-existing-resources.sh production my-gcp-project
+
+# Import existing VPC if needed
+./scripts/import-existing-resources.sh production my-gcp-project vpc
+
+# Clean everything for fresh start
+./scripts/cleanup-resources.sh production my-gcp-project
+```
+
 ## Prerequisites
 
 1. **Google Cloud Platform Account**
