@@ -97,7 +97,7 @@ jobs:
 
       - name: 📊 Upload Trivy Results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -499,15 +499,5 @@ jobs:
     steps:
       # Email notifications temporarily disabled - missing EMAIL_USERNAME and EMAIL_PASSWORD secrets
 
-      - name: 💬 Slack Notification
-        if: always()
-        uses: 8398a7/action-slack@v3
-        with:
-          status: ${{ job.status }}
-          channel: '#infrastructure'
-          username: 'Infrastructure Bot'
-          icon_emoji: ':construction:'
-          fields: repo,message,commit,author,action,eventName,ref,workflow
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+      # Notifications section - add other notification methods here if needed
 
