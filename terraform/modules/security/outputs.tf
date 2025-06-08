@@ -16,7 +16,7 @@ output "secret_names" {
     jwt_secret         = google_secret_manager_secret.jwt_secret.secret_id
     jwt_refresh_secret = google_secret_manager_secret.jwt_refresh_secret.secret_id
     recaptcha_secret   = google_secret_manager_secret.recaptcha_secret.secret_id
-    node_env          = google_secret_manager_secret.node_env.secret_id
+    node_env           = google_secret_manager_secret.node_env.secret_id
   }
 }
 

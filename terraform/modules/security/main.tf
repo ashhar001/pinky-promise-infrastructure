@@ -4,17 +4,17 @@
 resource "google_project_service" "secretmanager_api" {
   project = var.project_id
   service = "secretmanager.googleapis.com"
-  
+
   disable_dependent_services = false
-  disable_on_destroy = false
+  disable_on_destroy         = false
 }
 
 resource "google_project_service" "iam_api" {
   project = var.project_id
   service = "iam.googleapis.com"
-  
+
   disable_dependent_services = false
-  disable_on_destroy = false
+  disable_on_destroy         = false
 }
 
 # Workload Identity Service Account for GKE
@@ -37,12 +37,12 @@ resource "google_service_account" "cloudsql_proxy" {
 resource "google_service_account_iam_binding" "workload_identity_binding" {
   service_account_id = google_service_account.workload_identity.name
   role               = "roles/iam.workloadIdentityUser"
-  
+
   members = [
     "serviceAccount:${var.project_id}.svc.id.goog[${var.environment}/pinky-promise-backend]",
     "serviceAccount:${var.project_id}.svc.id.goog[${var.environment}/pinky-promise-frontend]"
   ]
-  
+
   depends_on = [var.workload_identity_pool]
 }
 
@@ -84,9 +84,9 @@ resource "google_project_iam_member" "trace_agent" {
 resource "google_secret_manager_secret" "jwt_secret" {
   project   = var.project_id
   secret_id = "${var.environment}-jwt-secret"
-  
+
   labels = var.common_labels
-  
+
   replication {
     auto {}
   }
@@ -105,9 +105,9 @@ resource "google_secret_manager_secret_version" "jwt_secret" {
 resource "google_secret_manager_secret" "jwt_refresh_secret" {
   project   = var.project_id
   secret_id = "${var.environment}-jwt-refresh-secret"
-  
+
   labels = var.common_labels
-  
+
   replication {
     auto {}
   }
@@ -126,9 +126,9 @@ resource "google_secret_manager_secret_version" "jwt_refresh_secret" {
 resource "google_secret_manager_secret" "recaptcha_secret" {
   project   = var.project_id
   secret_id = "${var.environment}-recaptcha-secret"
-  
+
   labels = var.common_labels
-  
+
   replication {
     auto {}
   }
@@ -138,7 +138,7 @@ resource "google_secret_manager_secret" "recaptcha_secret" {
 resource "google_secret_manager_secret_version" "recaptcha_secret" {
   secret      = google_secret_manager_secret.recaptcha_secret.id
   secret_data = "PLACEHOLDER_RECAPTCHA_SECRET_KEY"
-  
+
   lifecycle {
     ignore_changes = [secret_data]
   }
@@ -148,9 +148,9 @@ resource "google_secret_manager_secret_version" "recaptcha_secret" {
 resource "google_secret_manager_secret" "node_env" {
   project   = var.project_id
   secret_id = "${var.environment}-node-env"
-  
+
   labels = var.common_labels
-  
+
   replication {
     auto {}
   }
@@ -166,7 +166,7 @@ resource "google_project_iam_member" "gcr_reader" {
   project = var.project_id
   role    = "roles/storage.objectViewer"
   member  = "serviceAccount:${google_service_account.workload_identity.email}"
-  
+
   depends_on = [
     google_project_service.secretmanager_api,
     google_project_service.iam_api

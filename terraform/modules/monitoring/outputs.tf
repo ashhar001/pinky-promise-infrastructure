@@ -8,9 +8,9 @@ output "dashboard_url" {
 output "alerting_policies" {
   description = "List of created alerting policies"
   value = {
-    high_cpu           = google_monitoring_alert_policy.high_cpu.name
-    high_memory        = google_monitoring_alert_policy.high_memory.name
-    pod_restarts       = google_monitoring_alert_policy.pod_restarts.name
+    high_cpu             = google_monitoring_alert_policy.high_cpu.name
+    high_memory          = google_monitoring_alert_policy.high_memory.name
+    pod_restarts         = google_monitoring_alert_policy.pod_restarts.name
     database_connections = google_monitoring_alert_policy.database_connections.name
   }
 }
