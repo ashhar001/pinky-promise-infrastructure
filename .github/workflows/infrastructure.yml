@@ -497,31 +497,7 @@ jobs:
     needs: [validate, plan, apply]
     if: always()
     steps:
-      - name: 📧 Send Email Notification
-        if: always() && secrets.EMAIL_USERNAME != '' && secrets.EMAIL_PASSWORD != ''
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🏗️ Infrastructure Pipeline: ${{ job.status }} - ${{ github.repository }}"
-          body: |
-            Infrastructure Pipeline Status: ${{ job.status }}
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref }}
-            Commit: ${{ github.sha }}
-            Actor: ${{ github.actor }}
-            
-            Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            Results:
-            - Validation: ${{ needs.validate.result }}
-            - Planning: ${{ needs.plan.result }}
-            - Apply: ${{ needs.apply.result }}
-          to: ${{ secrets.ALERT_EMAIL }}
-          from: ${{ secrets.EMAIL_USERNAME }}
+      # Email notifications temporarily disabled - missing EMAIL_USERNAME and EMAIL_PASSWORD secrets
 
       - name: 💬 Slack Notification
         if: always() && secrets.SLACK_WEBHOOK != 'disabled'
